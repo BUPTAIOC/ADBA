@@ -70,7 +70,7 @@ class V:
             self.adv_v[x] *= -1
 
     def advv_to_tensor(self):
-        # 初始化三维列表
+        # 鍒濆鍖栦笁缁村垪琛?
         three_d_list = [
             [[self.adv_v[channel * self.size_x * self.size_y + x * self.size_y + y]
               for y in range(self.size_y)]
@@ -177,7 +177,7 @@ class Iter:
             if ite >= 4 and high - low <= 0.0002:
                 break
 
-        # 最终v1v2都成功，区分不开
+        # 鏈?缁坴1v2閮芥垚鍔燂紝鍖哄垎涓嶅紑
         self.chosen_v = succV[0]
         return query
 
@@ -185,13 +185,13 @@ class Iter:
 def progress_bar(imgi, query, iter, total, Rnow, bar_length=10):
     # percent = 100 * (progress / float(total))
     bar_fill = int(bar_length * query / total)
-    bar = '█' * bar_fill + '-' * (bar_length - bar_fill)
+    bar = '鈻?' * bar_fill + '-' * (bar_length - bar_fill)
     # sys.stdout.write(f'\r[{bar}] Q{percent:.1f}% R{Rnow:.3f}')
     sys.stdout.write(f'\rImg{imgi} Query{query :.0f}\t Iter{iter :.0f}\t Rinf{Rnow:.4f}')
     sys.stdout.flush()
 
 
-def ATK_WFY(model, original_image, imgi, label, sample_index, aim_r, tolerance_binary_iters, args):
+def ATK_ADBA(model, original_image, imgi, label, sample_index, aim_r, tolerance_binary_iters, args):
     channels, size_x, size_y = original_image.shape[1], original_image.shape[2], original_image.shape[3]
     if args.channels == 1:
         channels = args.channels
@@ -214,7 +214,7 @@ def ATK_WFY(model, original_image, imgi, label, sample_index, aim_r, tolerance_b
     """"""
 
     # ITERATION.show()
-    while (query < args.budget) and (ITERATION.old_vbest.Rmax > aim_r):  # 迭代轮数
+    while (query < args.budget) and (ITERATION.old_vbest.Rmax > aim_r):  # 杩唬杞暟
         block_iter = block_iter + 1
         blocks_i = []
         for i, bi in enumerate(blocks[block_iter - 1]):
@@ -255,7 +255,7 @@ def RlineQ(Rline, radius_line, budget):
     return
 
 
-def main_wfy():
+def main_ADBA():
     profile = lp.LineProfiler()
     # ###################################################################################
     torch_model, test_loader = None, None
@@ -391,7 +391,7 @@ def main_wfy():
 
         if torch_model.predict_label(xi) == yi:
             orig_correct_picture_num = orig_correct_picture_num + 1
-            success, que, iter_num, R, R2, avgval, Rline = ATK_WFY(torch_model, original_image, i,
+            success, que, iter_num, R, R2, avgval, Rline = ATK_ADBA(torch_model, original_image, i,
                                                                    label, picture_i, args.epsilon, 8, args)
             RlineQ(Rline, radius_line, args.budget - 1)
             if success == 1 and que <= args.budget:
@@ -444,4 +444,4 @@ def main_wfy():
             writer.writerow([budget_limit, ATK_succ_num / args.imgnum])
 
 if __name__ == "__main__":
-    main_wfy()
+    main_ADBA()
