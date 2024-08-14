@@ -27,6 +27,7 @@ import statistics
 
 
 ##################################################################################################
+#represent blocks of a picture
 class Block:
     def __init__(self, x1, x2):
         self.x1 = x1
@@ -37,10 +38,10 @@ class Block:
         bs = []
         for i in range(subnum):
             bs.append(copy.deepcopy(self))
-        # if self.width < 0.5 * self.high:
+ 
         for i in range(subnum):
-            line1 = self.x1 + (i * (self.x2 - self.x1)) // subnum
-            line2 = self.x1 + ((i + 1) * (self.x2 - self.x1)) // subnum
+            line1 = self.x1 + (i * (self.x2 - self.x1)) // subnum #d1
+            line2 = self.x1 + ((i + 1) * (self.x2 - self.x1)) // subnum #d2
             bs[i].x1 = line1
             if i > 0:
                 bs[i].x1 = line1 + 1
@@ -48,7 +49,7 @@ class Block:
             bs[i].width = bs[i].x2 - bs[i].x1 + 1
         return bs
 
-
+#represent a perturbation direction
 class V:
     def __init__(self, size_channel, size_x, size_y, v):
         self.size_channel = size_channel
@@ -64,13 +65,13 @@ class V:
         if v == 0:
             for x in range(len(self.adv_v)):
                 self.adv_v[x] = random.choice(list_temp)
-
+    #reverse blocks of a perturbation direction to generate new directions
     def reverse_v(self, block):
         for x in range(block.x1, block.x2 + 1):
             self.adv_v[x] *= -1
 
     def advv_to_tensor(self):
-        # 鍒濆鍖栦笁缁村垪琛?
+        # initialize 
         three_d_list = [
             [[self.adv_v[channel * self.size_x * self.size_y + x * self.size_y + y]
               for y in range(self.size_y)]
@@ -80,30 +81,28 @@ class V:
         perturbation = torch.tensor(aim_np)
         return perturbation
 
-
+#represent Iterations
 class Iter:
     def __init__(self, init_vbest, offspringN, iter_n=1):
         self.offspringN = offspringN
         self.iter_n = iter_n
-        # self.chosen_block_i = 0
-        # self.block_num = 2
-        self.offspringVs = []
-        self.chosen_v = -1
-        self.old_vbest = copy.deepcopy(init_vbest)
+        self.offspringVs = [] #d1 d2
+        self.chosen_v = -1 #chose witch d
+        self.old_vbest = copy.deepcopy(init_vbest) # dbest
         for i in range(offspringN):
             self.offspringVs.append(copy.deepcopy(init_vbest))
             self.offspringVs[i].Rmax, self.offspringVs[i].Rmin = 1.0, 0.0
-
+    #create a new generation
     def mutation(self, model, original_image, label, aim_r, tolerance_binary_iters, blocks, binaryM):
         query = 0
         for vi in range(self.offspringN):
             self.offspringVs[vi].reverse_v(blocks[vi])
             self.offspringVs[vi].Rmax, self.offspringVs[vi].Rmin = self.old_vbest.Rmax, 0.0
 
-        query = query + self.compare_directions_fast(
+        query = query + self.compare_directions_usingADB(
             model, original_image, label, aim_r, tolerance_binary_iters, binaryM)
 
-        for vi in range(self.offspringN):
+        for vi in range(self.offspringN): #initialize directions
             self.offspringVs[vi].reverse_v(blocks[vi])
         if self.chosen_v >= 0:
             self.old_vbest.reverse_v(blocks[self.chosen_v])
@@ -115,15 +114,15 @@ class Iter:
                     self.offspringVs[self.chosen_v].Rmax, self.offspringVs[self.chosen_v].Rmin)
         self.iter_n = self.iter_n + 1
         return query
-
-    def compare_directions_fast(self, model, original_image, label, aim_r, maxIters, binaryM):
-        perturbations = []
-        perturbed_images = []
-        predicted = []
+    #algorithm 2: Compare Directions Using ADB
+    def compare_directions_usingADB(self, model, original_image, label, aim_r, maxIters, binaryM):
+        perturbations = [] #d1 d2
+        perturbed_images = [] #= x+ADB*d
+        predicted = [] #= F(x+ADB*d)
         query = 0
         succV = []
         self.chosen_v = -1
-
+        #initialize directions
         for i in range(len(self.offspringVs)):
             perturbations.append(self.offspringVs[i].advv_to_tensor().cuda())
             perturbed_images.append(torch.clamp(original_image.cuda() +
@@ -145,54 +144,50 @@ class Iter:
             return query
 
         low, high = 0, self.old_vbest.Rmax
-        for ite in range(0, maxIters):
-            mid = DataTools.next_binary_rref(low, high, aim_r, self.old_vbest.Rmax, binaryM)
+        for ite in range(0, maxIters): #conmaration loop
+            ADB = DataTools.next_ADB(low, high, aim_r, self.old_vbest.Rmax, binaryM)#guess next ADB using rho(r)
             succVtemp = copy.deepcopy(succV)
             vi = 0
             while vi < len(succVtemp):
                 perturbed_images[succVtemp[vi]] = torch.clamp(
-                    original_image.cuda() + mid * perturbations[succVtemp[vi]], 0.0, 1.0)
+                    original_image.cuda() + ADB * perturbations[succVtemp[vi]], 0.0, 1.0)
                 predicted[succVtemp[vi]] = model.predict_label(perturbed_images[succVtemp[vi]]).cpu()
                 query = query + 1
                 if predicted[succVtemp[vi]] != label:
-                    self.offspringVs[succVtemp[vi]].Rmax = mid
+                    self.offspringVs[succVtemp[vi]].Rmax = ADB
                     self.chosen_v = succVtemp[vi]
                     if self.offspringVs[succVtemp[vi]].Rmax <= aim_r:
                         self.chosen_v = succVtemp[vi]
                         return query
                     vi = vi + 1
                 else:
-                    self.offspringVs[succVtemp[vi]].Rmin = mid
+                    self.offspringVs[succVtemp[vi]].Rmin = ADB
                     succVtemp.pop(vi)
 
             if len(succVtemp) == 0:
-                low = mid
+                low = ADB
             elif len(succVtemp) == 1:
                 self.chosen_v = succVtemp[0]
                 return query
             elif len(succVtemp) >= 2:
-                high = mid
+                high = ADB
                 succV = succVtemp
 
             if ite >= 4 and high - low <= 0.0002:
                 break
 
-        # 鏈?缁坴1v2閮芥垚鍔燂紝鍖哄垎涓嶅紑
+        #d1 and d2 are close, just return d1
         self.chosen_v = succV[0]
         return query
 
-
-def progress_bar(imgi, query, iter, total, Rnow, bar_length=10):
-    # percent = 100 * (progress / float(total))
-    bar_fill = int(bar_length * query / total)
-    bar = '鈻?' * bar_fill + '-' * (bar_length - bar_fill)
-    # sys.stdout.write(f'\r[{bar}] Q{percent:.1f}% R{Rnow:.3f}')
+#show the results dynamically
+def progress_bar(imgi, query, iter, Rnow):
     sys.stdout.write(f'\rImg{imgi} Query{query :.0f}\t Iter{iter :.0f}\t Rinf{Rnow:.4f}')
     sys.stdout.flush()
 
-
-def ATK_ADBA(model, original_image, imgi, label, sample_index, aim_r, tolerance_binary_iters, args):
-    channels, size_x, size_y = original_image.shape[1], original_image.shape[2], original_image.shape[3]
+#Algorithm 1: Approximate Decision Boundary Approach
+def ATK_ADBA(model, original_image_x, img_number, label_y, sample_index, aim_r, tolerance_binary_iters, args):
+    channels, size_x, size_y = original_image_x.shape[1], original_image_x.shape[2], original_image_x.shape[3]
     if args.channels == 1:
         channels = args.channels
     pix_num = channels * size_x * size_y
@@ -207,23 +202,21 @@ def ATK_ADBA(model, original_image, imgi, label, sample_index, aim_r, tolerance_
     query = 0
     Rline = [[0, 1.0]]
     ITERATION = Iter(v0, args.offspringN, 1)
-    query = query + ITERATION.mutation(model, original_image, label, aim_r, tolerance_binary_iters, blocks[0],
+    query = query + ITERATION.mutation(model, original_image_x, label_y, aim_r, tolerance_binary_iters, blocks[0],
                                        args.binaryM)
-    progress_bar(imgi, query, iter_num, args.budget, ITERATION.old_vbest.Rmax)
+    progress_bar(img_number, query, iter_num, ITERATION.old_vbest.Rmax)
     Rline.append([query, ITERATION.old_vbest.Rmax])
     """"""
 
-    # ITERATION.show()
-    while (query < args.budget) and (ITERATION.old_vbest.Rmax > aim_r):  # 杩唬杞暟
+    while (query < args.budget) and (ITERATION.old_vbest.Rmax > aim_r):  #main ATK loop
         block_iter = block_iter + 1
         blocks_i = []
         for i, bi in enumerate(blocks[block_iter - 1]):
             blocks_i.extend(bi.cut_block(args.offspringN))
-            query_plus = ITERATION.mutation(model, original_image, label, aim_r, tolerance_binary_iters,
+            query_plus = ITERATION.mutation(model, original_image_x, label_y, aim_r, tolerance_binary_iters,
                                             blocks_i[args.offspringN * i:args.offspringN * (i + 1)], args.binaryM)
             query = query + query_plus
-            # ITERATION.show()
-            progress_bar(imgi, query, iter_num, args.budget, ITERATION.old_vbest.Rmax)
+            progress_bar(img_number, query, iter_num, ITERATION.old_vbest.Rmax)
             Rline.append([query, ITERATION.old_vbest.Rmax])
             iter_num = iter_num + 1
             if (ITERATION.old_vbest.Rmax <= aim_r) or query >= args.budget:
@@ -232,15 +225,25 @@ def ATK_ADBA(model, original_image, imgi, label, sample_index, aim_r, tolerance_
 
     Rbest = ITERATION.old_vbest.Rmax
     adversarial_v = ITERATION.old_vbest.advv_to_tensor()
-    adversarial_image = original_image + Rbest * adversarial_v
+    adversarial_image = original_image_x + Rbest * adversarial_v
     adversarial_image = torch.clamp(adversarial_image, 0.0, 1.0)
-
 
     success = 1
     if Rbest > aim_r:
         success = -1
     # nparray = Rbest*np.array(iter_now.vbest.adv_v).flatten()
-    adv_img = adversarial_image - original_image
+    adv_img = adversarial_image - original_image_x
+
+    if query >= 1:
+        #save and output images and atk images
+        Filestring = ("Img"+str(sample_index)+
+                     "_Que"+str(query)+
+                      "_Time"+str(datetime.now().strftime("%H-%M-%S"))
+                      )
+        combined_file = DataTools.save_images(original_image_x,
+                                              adversarial_image,
+                                              0.5 * ITERATION.old_vbest.Rmax * (1 + adversarial_v),
+                                              Filestring)
     nparray = np.array(adv_img.cpu()).flatten()
     return success, query, ITERATION.iter_n, Rbest, np.linalg.norm(nparray, ord=2), np.mean(
         nparray), Rline  # np.linalg.norm(nparray,ord=np.inf)
@@ -377,7 +380,7 @@ def main_ADBA():
     tot_iters = 0
     stop_query = []
     radius_line = [0 for i in range(args.budget + 1)]
-    with open("results_record/RES" + result_file_name, mode='w', encoding='utf-8', newline='') as file:
+    with open("results_record/RES" + result_file_name, mode='w', encoding='utf-8', newline='') as file: #save result to .csv
         writer = csv.writer(file)
         writer.writerow(["img_i", "succ", "R", "que", "iter_num", "succ_r", "AVG_q", "MID_q", "AVG_iter", "QperI"])
     for i, (xi, yi) in enumerate(test_loader):
@@ -428,7 +431,7 @@ def main_ADBA():
         else:
             print(f"IMG{picture_i} originally classify wrongly")
     print(f"ORIGINAL_CLASSIFY_ACC={orig_correct_picture_num / i}")
-
+    # save ATK acc rate line result to .csv
     with open("results_record/RES_ACCLINE" + result_file_name, encoding='utf-8', mode='w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["Query_limit", "AVG_acc"])
