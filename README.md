@@ -28,6 +28,7 @@ Download the required model files into the `/code/model/` directory using the fo
 
 ## Dataset Setup
 ### MNIST
+#The mnist dataset is available without Download
 Download and prepare the MNIST dataset:
 ```python
 import torchvision
