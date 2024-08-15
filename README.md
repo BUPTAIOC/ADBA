@@ -27,8 +27,7 @@ Download the required model files into the `/code/model/` directory using the fo
 - DenseNet161: [Download](https://download.pytorch.org/models/densenet161-8d451a50.pth)
 
 ## Dataset Setup
-### MNIST
-#The mnist dataset is available without Download
+### MNIST #The mnist dataset is available without Download;
 Download and prepare the MNIST dataset:
 ```python
 import torchvision
