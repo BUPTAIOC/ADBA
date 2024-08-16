@@ -136,7 +136,7 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-/code/data/
+#/code/data/
 /data/imagenet/
 /code/adversarial_samples/
 /code/results_record/
