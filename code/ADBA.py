@@ -144,7 +144,7 @@ class Iter:
             return query
 
         low, high = 0, self.old_vbest.Rmax
-        for ite in range(0, maxIters): #conmaration loop
+        while high - low >= 1e-5: #conmaration loop
             ADB = DataTools.next_ADB(low, high, aim_r, self.old_vbest.Rmax, binaryM)#guess next ADB using rho(r)
             succVtemp = copy.deepcopy(succV)
             vi = 0
@@ -172,10 +172,6 @@ class Iter:
             elif len(succVtemp) >= 2:
                 high = ADB
                 succV = succVtemp
-
-            if ite >= 4 and high - low <= 0.0002:
-                break
-
         #d1 and d2 are close, just return d1
         self.chosen_v = succV[0]
         return query
